@@ -60,12 +60,22 @@ func parseLines(lines []string, startLineNo int) (commands []command, lineNo int
 	return commands, lineNo
 }
 
+func isBlockCommand(c string) bool {
+	return c == "L"
+}
+
+func (c *command) hasSubCommands() bool {
+	return isBlockCommand(c.fields[0])
+}
+
 func parseCommand(lines []string, startLineNo int, fields []string) (c command, lineNo int) {
 	lineNo = startLineNo
 	lineVerbatim := lines[lineNo]
 	c = command{line: lineVerbatim, lineNo: lineNo, fields: fields}
-	switch fields[0] {
-	case "L":
+	if fields[0] == "E" {
+		panic("cannot parse command E")		
+	}
+	if isBlockCommand(fields[0]) {
 		subCommands, newLineNo := parseLines(lines, lineNo+1)
 		if newLineNo >= len(lines) {
 			fmt.Fprintf(os.Stderr, "Error in program: unterminated loop\n")
@@ -73,18 +83,11 @@ func parseCommand(lines []string, startLineNo int, fields []string) (c command, 
 		}
 		c.subCommands = subCommands
 		c.endLine = lines[newLineNo]
-		lineNo = newLineNo + 1
-	case "E":
-		panic("cannot parse command E")
-	default:
-		lineNo++
+		lineNo = newLineNo		
 	}
+	lineNo++
 
 	return c, lineNo
-}
-
-func (c *command) hasSubCommands() bool {
-	return c.fields[0] == "L"
 }
 
 func (c *command) duration() int {
