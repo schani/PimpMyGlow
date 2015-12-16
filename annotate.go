@@ -3,10 +3,21 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
 )
+
+type command struct {
+	line        string
+	endLine     string
+	lineNo      int
+	fields      []string
+	subCommands []command
+}
+
+type program []command
 
 func parseCount(f string, lineNo int) int {
 	duration, err := strconv.Atoi(f)
@@ -21,83 +32,121 @@ func parseCount(f string, lineNo int) int {
 	return duration
 }
 
-func splitLine(lineVerbatim string) (command string, fields []string) {
+func splitLine(lineVerbatim string) []string {
 	line := lineVerbatim
 	if strings.Contains(line, ";") {
 		line = line[0:strings.Index(line, ";")]
 	}
 	line = strings.Trim(line, " \t")
-	fields = strings.Split(line, ",")
+	fields := strings.Split(line, ",")
 	for i, f := range fields {
 		fields[i] = strings.Trim(f, " \t")
 	}
-	command = strings.Trim(fields[0], " \t")
-	return command, fields
+	return fields
 }
 
-func parseLines(lines []string, startLineNo int) (duration int, lineNo int) {
+func parseLines(lines []string, startLineNo int) (commands []command, lineNo int) {
 	lineNo = startLineNo
-	duration = 0
 	for lineNo < len(lines) {
 		lineVerbatim := lines[lineNo]
-		command, _ := splitLine(lineVerbatim)
-		if command == "E" {
-			fmt.Printf("%s\n", lineVerbatim)
-			return duration, lineNo + 1
+		fields := splitLine(lineVerbatim)
+		if fields[0] == "E" {
+			break
 		}
-		subDuration, newLineNo := parseProgram(lines, lineNo)
-		duration += subDuration
+		command, newLineNo := parseCommand(lines, lineNo, fields)
+		commands = append(commands, command)
 		lineNo = newLineNo
 	}
-	fmt.Fprintf(os.Stderr, "Error in program: unterminated loop\n")
-	os.Exit(1)
-	return -1, -1
+	return commands, lineNo
 }
 
-func parseProgram(lines []string, startLineNo int) (duration int, lineNo int) {
+func parseCommand(lines []string, startLineNo int, fields []string) (c command, lineNo int) {
 	lineNo = startLineNo
 	lineVerbatim := lines[lineNo]
-	fmt.Printf("%s\n", lineVerbatim)
-	command, fields := splitLine(lineVerbatim)
-	duration = 0
-	switch command {
-	case "D":
-		duration = parseCount(fields[1], lineNo)
-		lineNo++
-	case "RAMP":
-		duration = parseCount(fields[4], lineNo)
-		lineNo++
-	case "C":
-		lineNo++
+	c = command{line: lineVerbatim, lineNo: lineNo, fields: fields}
+	switch fields[0] {
 	case "L":
-		count := parseCount(fields[1], lineNo)
-		duration, lineNo = parseLines(lines, lineNo+1)
-		duration *= count
+		subCommands, newLineNo := parseLines(lines, lineNo+1)
+		if newLineNo >= len(lines) {
+			fmt.Fprintf(os.Stderr, "Error in program: unterminated loop\n")
+			os.Exit(1)
+		}
+		c.subCommands = subCommands
+		c.endLine = lines[newLineNo]
+		lineNo = newLineNo + 1
 	case "E":
-		fmt.Fprintf(os.Stderr, "Error in line %d: E without L\n", lineNo)
-		os.Exit(1)
+		panic("cannot parse command E")
 	default:
 		lineNo++
 	}
 
-	return duration, lineNo
+	return c, lineNo
 }
 
-func main() {
-	scanner := bufio.NewScanner(os.Stdin)
+func (c *command) hasSubCommands() bool {
+	return c.fields[0] == "L"
+}
+
+func (c *command) duration() int {
+	switch c.fields[0] {
+	case "D":
+		return parseCount(c.fields[1], c.lineNo)
+	case "RAMP":
+		return parseCount(c.fields[4], c.lineNo)
+	case "L":
+		count := parseCount(c.fields[1], c.lineNo)
+		duration := 0
+		for _, sc := range c.subCommands {
+			duration += sc.duration()
+		}
+		return duration * count
+	default:
+		if c.hasSubCommands() {
+			panic("unexpected sub-commands")
+		}
+		return 0
+	}
+}
+
+func (c *command) print() {
+	fmt.Println(c.line)
+	if c.hasSubCommands() {
+		for _, sc := range c.subCommands {
+			sc.print()
+		}
+		fmt.Println(c.endLine)
+	}
+}
+
+func (p program) annotateTimes() {
+	time := 0
+	for _, c := range p {
+		c.print()
+		d := c.duration()
+		if d > 0 {
+			time += c.duration()
+			fmt.Printf("    ; time %d\n", time)
+		}
+	}
+}
+
+func parseProgram(r io.Reader) program {
+	scanner := bufio.NewScanner(r)
 	var lines []string
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
-	time := 0
-	lineNo := 0
-	for lineNo < len(lines) {
-		duration, newLineNo := parseProgram(lines, lineNo)
-		lineNo = newLineNo
-		if duration == 0 {
-			continue
-		}
-		time += duration
-		fmt.Printf("    ; time %d\n", time)
+
+	commands, lineNo := parseLines(lines, 0)
+	if lineNo < len(lines) {
+		fmt.Fprintf(os.Stderr, "Error in line %d: E without L\n", lineNo)
+		os.Exit(1)
 	}
+
+	return program(commands)
+}
+
+func main() {
+	program := parseProgram(os.Stdin)
+	program.annotateTimes()
 }
