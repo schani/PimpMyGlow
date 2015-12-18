@@ -103,6 +103,10 @@ func (c *command) duration() int {
 			duration += sc.duration()
 		}
 		return duration * count
+	case "TIME":
+		fmt.Fprintf(os.Stderr, "Error: TIME not supported here in line %d\n", c.lineNo)
+		os.Exit(1)
+		return -1
 	default:
 		if c.hasSubCommands() {
 			panic("unexpected sub-commands")
@@ -162,6 +166,31 @@ func (p program) specializeForClub(club int) program {
 	return newCommands
 }
 
+func (p program) resolveTime() program {
+	var newCommands []command
+	time := 0
+	for _, c := range p {
+		switch c.fields[0] {
+		case "TIME":
+			target := parseCount(c.fields[1], c.lineNo)
+			if target < time {
+				fmt.Fprintf(os.Stderr, "Error: Cannot go back in time - it's already %d - in line %d\n", time, c.lineNo)
+				os.Exit(1)
+			}
+			if target == time {
+				continue
+			}
+			fields := []string{"D", fmt.Sprintf("%d", target-time)}
+			newCommands = append(newCommands, command{line: strings.Join(fields, ","), fields: fields, lineNo: c.lineNo})
+			time = target
+		default:
+			newCommands = append(newCommands, c)
+			time += c.duration()
+		}
+	}
+	return newCommands
+}
+
 func parseProgram(r io.Reader) program {
 	scanner := bufio.NewScanner(r)
 	var lines []string
@@ -181,5 +210,6 @@ func parseProgram(r io.Reader) program {
 func main() {
 	program := parseProgram(os.Stdin)
 	specialized := program.specializeForClub(1)
-	specialized.annotateTimes()
+	resolved := specialized.resolveTime()
+	resolved.annotateTimes()
 }
