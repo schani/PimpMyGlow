@@ -61,7 +61,7 @@ func parseLines(lines []string, startLineNo int) (commands []command, lineNo int
 }
 
 func isBlockCommand(c string) bool {
-	return c == "L"
+	return c == "L" || c == "CLUBS"
 }
 
 func (c *command) hasSubCommands() bool {
@@ -73,7 +73,7 @@ func parseCommand(lines []string, startLineNo int, fields []string) (c command, 
 	lineVerbatim := lines[lineNo]
 	c = command{line: lineVerbatim, lineNo: lineNo, fields: fields}
 	if fields[0] == "E" {
-		panic("cannot parse command E")		
+		panic("cannot parse command E")
 	}
 	if isBlockCommand(fields[0]) {
 		subCommands, newLineNo := parseLines(lines, lineNo+1)
@@ -83,7 +83,7 @@ func parseCommand(lines []string, startLineNo int, fields []string) (c command, 
 		}
 		c.subCommands = subCommands
 		c.endLine = lines[newLineNo]
-		lineNo = newLineNo		
+		lineNo = newLineNo
 	}
 	lineNo++
 
@@ -133,6 +133,35 @@ func (p program) annotateTimes() {
 	}
 }
 
+func (p program) specializeForClub(club int) program {
+	var newCommands []command
+	for _, c := range p {
+		switch c.fields[0] {
+		case "L":
+			newC := c
+			newC.subCommands = program(c.subCommands).specializeForClub(club)
+			newCommands = append(newCommands, newC)
+		case "CLUBS":
+			found := false
+			for _, f := range c.fields[1:len(c.fields)] {
+				if parseCount(f, c.lineNo) == club {
+					found = true
+					break
+				}
+			}
+			if found {
+				subCommands := program(c.subCommands).specializeForClub(club)
+				for _, sc := range subCommands {
+					newCommands = append(newCommands, sc)
+				}
+			}
+		default:
+			newCommands = append(newCommands, c)
+		}
+	}
+	return newCommands
+}
+
 func parseProgram(r io.Reader) program {
 	scanner := bufio.NewScanner(r)
 	var lines []string
@@ -146,10 +175,11 @@ func parseProgram(r io.Reader) program {
 		os.Exit(1)
 	}
 
-	return program(commands)
+	return commands
 }
 
 func main() {
 	program := parseProgram(os.Stdin)
-	program.annotateTimes()
+	specialized := program.specializeForClub(1)
+	specialized.annotateTimes()
 }
