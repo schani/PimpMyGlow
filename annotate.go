@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -19,14 +20,19 @@ type command struct {
 
 type program []command
 
-func parseCount(f string, lineNo int) int {
+func parseNumber(f string, lineNo int) int {
 	duration, err := strconv.Atoi(f)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error in line %d\n", lineNo)
 		os.Exit(1)
 	}
+	return duration
+}
+
+func parseCount(f string, lineNo int) int {
+	duration := parseNumber(f, lineNo)
 	if duration == 0 {
-		fmt.Fprintf(os.Stderr, "Error in line %d: count can't be zero", lineNo)
+		fmt.Fprintf(os.Stderr, "Error in line %d: count can't be zero\n", lineNo)
 		os.Exit(1)
 	}
 	return duration
@@ -109,7 +115,7 @@ func (c *command) duration() int {
 		return -1
 	default:
 		if c.hasSubCommands() {
-			panic("unexpected sub-commands")
+			panic(fmt.Sprintf("unexpected sub-commands in %s in line %d", c.fields[0], c.lineNo))
 		}
 		return 0
 	}
@@ -122,6 +128,12 @@ func (c *command) print() {
 			sc.print()
 		}
 		fmt.Println(c.endLine)
+	}
+}
+
+func (p program) print() {
+	for _, c := range p {
+		c.print()
 	}
 }
 
@@ -141,10 +153,6 @@ func (p program) specializeForClub(club int) program {
 	var newCommands []command
 	for _, c := range p {
 		switch c.fields[0] {
-		case "L":
-			newC := c
-			newC.subCommands = program(c.subCommands).specializeForClub(club)
-			newCommands = append(newCommands, newC)
 		case "CLUBS":
 			found := false
 			for _, f := range c.fields[1:len(c.fields)] {
@@ -160,7 +168,11 @@ func (p program) specializeForClub(club int) program {
 				}
 			}
 		default:
-			newCommands = append(newCommands, c)
+			newC := c
+			if c.hasSubCommands() {
+				newC.subCommands = program(c.subCommands).specializeForClub(club)
+			}
+			newCommands = append(newCommands, newC)
 		}
 	}
 	return newCommands
@@ -191,6 +203,82 @@ func (p program) resolveTime() program {
 	return newCommands
 }
 
+type color struct {
+	r, g, b int
+}
+
+var colorRegexp *regexp.Regexp
+
+func resolveColor(colors map[string]color, description string, lineNo int) []string {
+	if colorRegexp == nil {
+		colorRegexp = regexp.MustCompile("^([^%]+)(\\s+(\\d+)%)?$")
+	}
+	matches := colorRegexp.FindStringSubmatch(description)
+	name := matches[1]
+	c, ok := colors[name]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Error: Color %s not defined in line %d\n", name, lineNo)
+		os.Exit(1)
+	}
+	if matches[3] != "" {
+		p := float64(parseNumber(matches[3], lineNo)) / 100.0
+		c.r = int(float64(c.r) * p)
+		c.g = int(float64(c.g) * p)
+		c.b = int(float64(c.b) * p)
+	}
+	return []string{fmt.Sprintf("%d", c.r), fmt.Sprintf("%d", c.g), fmt.Sprintf("%d", c.b)}
+}
+
+func resolveColorInCommands(cs []command, colors map[string]color, allowDefine bool) []command {
+	var newCommands []command
+	for _, c := range cs {
+		switch c.fields[0] {
+		case "COLOR":
+			if !allowDefine {
+				fmt.Fprintf(os.Stderr, "Error: Can't define colors here in line %d\n", c.lineNo)
+				os.Exit(1)
+			}
+			_, ok := colors[c.fields[1]]
+			if ok {
+				fmt.Fprintf(os.Stderr, "Error: Color %s redefined\n", c.fields[1])
+				os.Exit(1)
+			}
+			colors[c.fields[1]] = color{
+				r: parseNumber(c.fields[2], c.lineNo),
+				g: parseNumber(c.fields[3], c.lineNo),
+				b: parseNumber(c.fields[4], c.lineNo),
+			}
+		case "C":
+			newC := c
+			if len(c.fields) == 2 {
+				clr := resolveColor(colors, c.fields[1], c.lineNo)
+				newC.fields = []string{"C", clr[0], clr[1], clr[2]}
+				newC.line = strings.Join(newC.fields, ",")
+			}
+			newCommands = append(newCommands, newC)
+		case "RAMP":
+			newC := c
+			if len(c.fields) == 3 {
+				clr := resolveColor(colors, c.fields[1], c.lineNo)
+				newC.fields = []string{"RAMP", clr[0], clr[1], clr[2], c.fields[2]}
+				newC.line = strings.Join(newC.fields, ",")
+			}
+			newCommands = append(newCommands, newC)
+		default:
+			newC := c
+			if c.hasSubCommands() {
+				newC.subCommands = resolveColorInCommands(c.subCommands, colors, false)
+			}
+			newCommands = append(newCommands, newC)
+		}
+	}
+	return newCommands
+}
+
+func (p program) resolveColor() program {
+	return resolveColorInCommands(p, make(map[string]color), true)
+}
+
 func parseProgram(r io.Reader) program {
 	scanner := bufio.NewScanner(r)
 	var lines []string
@@ -210,6 +298,7 @@ func parseProgram(r io.Reader) program {
 func main() {
 	program := parseProgram(os.Stdin)
 	specialized := program.specializeForClub(1)
-	resolved := specialized.resolveTime()
+	colored := specialized.resolveColor()
+	resolved := colored.resolveTime()
 	resolved.annotateTimes()
 }
