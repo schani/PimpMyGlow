@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/xml"
+	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -127,30 +128,30 @@ func (c *command) duration() int {
 	}
 }
 
-func (c *command) print() {
-	fmt.Println(c.line)
+func (c *command) print(w io.Writer) {
+	fmt.Fprintln(w, c.line)
 	if c.hasSubCommands() {
 		for _, sc := range c.subCommands {
-			sc.print()
+			sc.print(w)
 		}
 		fmt.Println(c.endLine)
 	}
 }
 
-func (p program) print() {
+func (p program) print(w io.Writer) {
 	for _, c := range p {
-		c.print()
+		c.print(w)
 	}
 }
 
-func (p program) annotateTimes() {
+func (p program) annotateTimes(w io.Writer) {
 	time := 0
 	for _, c := range p {
-		c.print()
+		c.print(w)
 		d := c.duration()
 		if d > 0 {
 			time += c.duration()
-			fmt.Printf("    ; time %d\n", time)
+			fmt.Fprintf(w, "    ; time %d\n", time)
 		}
 	}
 }
@@ -411,22 +412,64 @@ func readLabels(reader io.Reader) (map[string]label, error) {
 }
 
 func main() {
-	file, err := os.Open("einszweipolizei.aup")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+	var err error
+
+	audacityFlag := flag.String("audacity", "", "Audacity file path")
+	clubFlag := flag.Int("club", 0, "Club to specialize for")
+	inputFlag := flag.String("input", "-", "Input file")
+	outputFlag := flag.String("output", "-", "Output file")
+
+	flag.Parse()
+
+	if *clubFlag < 0 {
+		fmt.Fprintf(os.Stderr, "Error: Club can't be negative\n")
 		os.Exit(1)
 	}
-	defer file.Close()
 
-	labels, err := readLabels(file)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading Audacity file: %s\n", err.Error())
+	labels := make(map[string]label)
+	if *audacityFlag != "" {
+		file, err := os.Open(*audacityFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: Can't open audacity file `%s`: %s\n", *audacityFlag, err.Error())
+			os.Exit(1)
+		}
+		defer file.Close()
+
+		labels, err = readLabels(file)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading Audacity file `%s`: %s\n", *audacityFlag, err.Error())
+			os.Exit(1)
+		}
 	}
 
-	program := parseProgram(os.Stdin)
-	specialized := program.specializeForClub(1)
+	inFile := os.Stdin
+	if *inputFlag != "-" {
+		inFile, err = os.Open(*inputFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening input file `%s`: %s\n", *inputFlag, err.Error())
+			os.Exit(1)
+		}
+		defer inFile.Close()
+	}
+	program := parseProgram(inFile)
+
+	specialized := program
+	if *clubFlag != 0 {
+		specialized = program.specializeForClub(*clubFlag)
+	}
 	colored := specialized.resolveColor()
 	delabeled := colored.resolveLabels(labels)
 	resolved := delabeled.resolveTime()
-	resolved.annotateTimes()
+
+	outFile := os.Stdout
+	if *outputFlag != "-" {
+		outFile, err = os.Create(*outputFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening output file `%s`: %s\n", *outputFlag, err.Error())
+			os.Exit(1)
+		}
+		defer outFile.Close()
+	}
+
+	resolved.annotateTimes(outFile)
 }
