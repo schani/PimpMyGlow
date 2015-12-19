@@ -24,12 +24,16 @@ type command struct {
 
 type program []command
 
+func errorExit(lineNo int, format string, args ...interface{}) {
+	args = append([]interface{}{lineNo + 1}, args...)
+	fmt.Fprintf(os.Stderr, "Error in line %d: "+format+"\n", args...)
+	os.Exit(1)
+}
+
 func parseNumber(f string, lineNo int) int {
 	duration, err := strconv.Atoi(f)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error parsing number in line %d\n", lineNo)
-		panic("bla")
-		os.Exit(1)
+		errorExit(lineNo, "Cannot parse number `%s`", f)
 	}
 	return duration
 }
@@ -37,8 +41,7 @@ func parseNumber(f string, lineNo int) int {
 func parseCount(f string, lineNo int) int {
 	duration := parseNumber(f, lineNo)
 	if duration == 0 {
-		fmt.Fprintf(os.Stderr, "Error in line %d: count can't be zero\n", lineNo)
-		os.Exit(1)
+		errorExit(lineNo, "Count can't be zero")
 	}
 	return duration
 }
@@ -89,8 +92,7 @@ func parseCommand(lines []string, startLineNo int, fields []string) (c command, 
 	if isBlockCommand(fields[0]) {
 		subCommands, newLineNo := parseLines(lines, lineNo+1)
 		if newLineNo >= len(lines) {
-			fmt.Fprintf(os.Stderr, "Error in program: unterminated loop\n")
-			os.Exit(1)
+			errorExit(lineNo, "Unterminated loop")
 		}
 		c.subCommands = subCommands
 		c.endLine = lines[newLineNo]
@@ -115,8 +117,7 @@ func (c *command) duration() int {
 		}
 		return duration * count
 	case "TIME":
-		fmt.Fprintf(os.Stderr, "Error: TIME not supported here in line %d\n", c.lineNo)
-		os.Exit(1)
+		errorExit(c.lineNo, "TIME not supported here")
 		return -1
 	default:
 		if c.hasSubCommands() {
@@ -191,8 +192,7 @@ func (p program) resolveTime() program {
 		case "TIME":
 			target := parseCount(c.fields[1], c.lineNo)
 			if target < time {
-				fmt.Fprintf(os.Stderr, "Error: Cannot go back in time - it's already %d - in line %d\n", time, c.lineNo)
-				os.Exit(1)
+				errorExit(c.lineNo, "Cannot go back in time - it's already %d", time)
 			}
 			if target == time {
 				continue
@@ -222,8 +222,7 @@ func resolveColor(colors map[string]color, description string, lineNo int) []str
 	name := matches[1]
 	c, ok := colors[name]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "Error: Color %s not defined in line %d\n", name, lineNo)
-		os.Exit(1)
+		errorExit(lineNo, "Color `%s` not defined", name)
 	}
 	if matches[3] != "" {
 		p := float64(parseNumber(matches[3], lineNo)) / 100.0
@@ -240,13 +239,11 @@ func resolveColorInCommands(cs []command, colors map[string]color, allowDefine b
 		switch c.fields[0] {
 		case "COLOR":
 			if !allowDefine {
-				fmt.Fprintf(os.Stderr, "Error: Can't define colors here in line %d\n", c.lineNo)
-				os.Exit(1)
+				errorExit(c.lineNo, "Can't define colors here")
 			}
 			_, ok := colors[c.fields[1]]
 			if ok {
-				fmt.Fprintf(os.Stderr, "Error: Color %s redefined\n", c.fields[1])
-				os.Exit(1)
+				errorExit(c.lineNo, "Color `%s` redefined", c.fields[1])
 			}
 			var colorFields []string
 			if len(c.fields) == 3 {
@@ -296,15 +293,13 @@ type label struct {
 }
 
 func cannotInterpret(expr ast.Expr, lineNo int) {
-	fmt.Fprintf(os.Stderr, "Error: Cannot interpret %T expression %v in line %d\n", expr, expr, lineNo)
-	os.Exit(1)
+	errorExit(lineNo, "Cannot interpret %T expression `%v`", expr, expr)
 }
 
 func lookupLabel(labels map[string]label, name string, lineNo int) label {
 	label, ok := labels[name]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "Error: Unknown label %s in line %d\n", name, lineNo)
-		os.Exit(1)
+		errorExit(lineNo, "Unknown label `%s`", name)
 	}
 	return label
 }
@@ -332,7 +327,6 @@ func interpretExpr(expr ast.Expr, labels map[string]label, lineNo int) int {
 			label := lookupLabel(labels, ident.Name, lineNo)
 			return label.end - label.start
 		}
-		fmt.Fprintf(os.Stderr, "Error: wrong op %d\n", int(expr.Op))
 	case *ast.BinaryExpr:
 		if expr.Op == token.QUO {
 			left := interpretExpr(expr.X, labels, lineNo)
@@ -356,7 +350,7 @@ func (p program) resolveLabels(labels map[string]label) program {
 
 			expr, err := parser.ParseExpr(c.fields[timeField])
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error: Parse error in line %d: %s\n", c.lineNo, err.Error())
+				errorExit(c.lineNo, "Parse error: %s", err.Error())
 			}
 			result := interpretExpr(expr, labels, c.lineNo)
 
@@ -381,8 +375,7 @@ func parseProgram(r io.Reader) program {
 
 	commands, lineNo := parseLines(lines, 0)
 	if lineNo < len(lines) {
-		fmt.Fprintf(os.Stderr, "Error in line %d: E without L\n", lineNo)
-		os.Exit(1)
+		errorExit(lineNo, "E without L", lineNo)
 	}
 
 	return commands
@@ -427,7 +420,7 @@ func main() {
 
 	labels, err := readLabels(file)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading XML: %s\n", err.Error())
+		fmt.Fprintf(os.Stderr, "Error reading Audacity file: %s\n", err.Error())
 	}
 
 	program := parseProgram(os.Stdin)
