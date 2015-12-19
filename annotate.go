@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"os"
@@ -285,6 +286,42 @@ func (p program) resolveColor() program {
 	return resolveColorInCommands(p, make(map[string]color), true)
 }
 
+type label struct {
+	start int
+	end   int
+}
+
+func (p program) resolveLabels(labels map[string]label) program {
+	var newCommands []command
+	for _, c := range p {
+		switch c.fields[0] {
+		case "TIME":
+			newC := c
+			allDigits, err := regexp.MatchString("^\\d+$", c.fields[1])
+			if err != nil {
+				panic("We screwed up the regular expression")
+			}
+			if !allDigits {
+				label, ok := labels[c.fields[1]]
+				if !ok {
+					fmt.Fprintf(os.Stderr, "Error: Label %s not defined\n", c.fields[1])
+					os.Exit(1)
+				}
+				newC.fields = []string{"TIME", fmt.Sprintf("%d", label.start)}
+				newC.line = strings.Join(newC.fields, ",")
+			}
+			newCommands = append(newCommands, newC)
+		default:
+			newC := c
+			if c.hasSubCommands() {
+				newC.subCommands = program(c.subCommands).resolveLabels(labels)
+			}
+			newCommands = append(newCommands, newC)
+		}
+	}
+	return newCommands
+}
+
 func parseProgram(r io.Reader) program {
 	scanner := bufio.NewScanner(r)
 	var lines []string
@@ -301,10 +338,52 @@ func parseProgram(r io.Reader) program {
 	return commands
 }
 
+// XMLLabel must be exported to work with encoding/xml.
+type XMLLabel struct {
+	Title string  `xml:"title,attr"`
+	Start float64 `xml:"t,attr"`
+	End   float64 `xml:"t1,attr"`
+}
+
+// XMLProject must be exported to work with encoding/xml.
+type XMLProject struct {
+	Labels []XMLLabel `xml:"labeltrack>label"`
+}
+
+func readLabels(reader io.Reader) (map[string]label, error) {
+	var project XMLProject
+	if err := xml.NewDecoder(reader).Decode(&project); err != nil {
+		return nil, err
+	}
+	labels := make(map[string]label)
+	for _, l := range project.Labels {
+		_, ok := labels[l.Title]
+		if ok {
+			fmt.Fprintf(os.Stderr, "Error: Label %s defined more than once\n", l.Title)
+			os.Exit(1)
+		}
+		labels[l.Title] = label{start: int(l.Start * 100), end: int(l.End * 100)}
+	}
+	return labels, nil
+}
+
 func main() {
+	file, err := os.Open("einszweipolizei.aup")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+		os.Exit(1)
+	}
+	defer file.Close()
+
+	labels, err := readLabels(file)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading XML: %s\n", err.Error())
+	}
+
 	program := parseProgram(os.Stdin)
 	specialized := program.specializeForClub(1)
 	colored := specialized.resolveColor()
-	resolved := colored.resolveTime()
+	delabeled := colored.resolveLabels(labels)
+	resolved := delabeled.resolveTime()
 	resolved.annotateTimes()
 }
