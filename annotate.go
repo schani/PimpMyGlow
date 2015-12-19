@@ -27,7 +27,8 @@ type program []command
 func parseNumber(f string, lineNo int) int {
 	duration, err := strconv.Atoi(f)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error in line %d\n", lineNo)
+		fmt.Fprintf(os.Stderr, "Error parsing number in line %d\n", lineNo)
+		panic("bla")
 		os.Exit(1)
 	}
 	return duration
@@ -323,8 +324,21 @@ func interpretExpr(expr ast.Expr, labels map[string]label, lineNo int) int {
 				cannotInterpret(expr, lineNo)
 			}
 			return lookupLabel(labels, ident.Name, lineNo).end
+		} else if expr.Op == token.AND {
+			ident, ok := expr.X.(*ast.Ident)
+			if !ok {
+				cannotInterpret(expr, lineNo)
+			}
+			label := lookupLabel(labels, ident.Name, lineNo)
+			return label.end - label.start
 		}
 		fmt.Fprintf(os.Stderr, "Error: wrong op %d\n", int(expr.Op))
+	case *ast.BinaryExpr:
+		if expr.Op == token.QUO {
+			left := interpretExpr(expr.X, labels, lineNo)
+			right := interpretExpr(expr.Y, labels, lineNo)
+			return left / right
+		}
 	}
 	cannotInterpret(expr, lineNo)
 	return -1
@@ -333,24 +347,27 @@ func interpretExpr(expr ast.Expr, labels map[string]label, lineNo int) int {
 func (p program) resolveLabels(labels map[string]label) program {
 	var newCommands []command
 	for _, c := range p {
+		newC := c
 		switch c.fields[0] {
-		case "TIME":
-			newC := c
-			expr, err := parser.ParseExpr(c.fields[1])
+		case "D", "TIME", "RAMP":
+			timeField := len(c.fields) - 1
+			newC.fields = make([]string, len(c.fields))
+			copy(newC.fields, c.fields)
+
+			expr, err := parser.ParseExpr(c.fields[timeField])
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Error: Parse error in line %d: %s\n", c.lineNo, err.Error())
 			}
 			result := interpretExpr(expr, labels, c.lineNo)
-			newC.fields = []string{"TIME", fmt.Sprintf("%d", result)}
+
+			newC.fields[timeField] = fmt.Sprintf("%d", result)
 			newC.line = strings.Join(newC.fields, ",")
-			newCommands = append(newCommands, newC)
 		default:
-			newC := c
 			if c.hasSubCommands() {
 				newC.subCommands = program(c.subCommands).resolveLabels(labels)
 			}
-			newCommands = append(newCommands, newC)
 		}
+		newCommands = append(newCommands, newC)
 	}
 	return newCommands
 }
