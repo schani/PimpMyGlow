@@ -4,6 +4,9 @@ import (
 	"bufio"
 	"encoding/xml"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"regexp"
@@ -291,25 +294,55 @@ type label struct {
 	end   int
 }
 
+func cannotInterpret(expr ast.Expr, lineNo int) {
+	fmt.Fprintf(os.Stderr, "Error: Cannot interpret %T expression %v in line %d\n", expr, expr, lineNo)
+	os.Exit(1)
+}
+
+func lookupLabel(labels map[string]label, name string, lineNo int) label {
+	label, ok := labels[name]
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Error: Unknown label %s in line %d\n", name, lineNo)
+		os.Exit(1)
+	}
+	return label
+}
+
+func interpretExpr(expr ast.Expr, labels map[string]label, lineNo int) int {
+	switch expr := expr.(type) {
+	case *ast.BasicLit:
+		if expr.Kind == token.INT {
+			return parseNumber(expr.Value, lineNo)
+		}
+	case *ast.Ident:
+		return lookupLabel(labels, expr.Name, lineNo).start
+	case *ast.UnaryExpr:
+		if expr.Op == token.SUB {
+			ident, ok := expr.X.(*ast.Ident)
+			if !ok {
+				cannotInterpret(expr, lineNo)
+			}
+			return lookupLabel(labels, ident.Name, lineNo).end
+		}
+		fmt.Fprintf(os.Stderr, "Error: wrong op %d\n", int(expr.Op))
+	}
+	cannotInterpret(expr, lineNo)
+	return -1
+}
+
 func (p program) resolveLabels(labels map[string]label) program {
 	var newCommands []command
 	for _, c := range p {
 		switch c.fields[0] {
 		case "TIME":
 			newC := c
-			allDigits, err := regexp.MatchString("^\\d+$", c.fields[1])
+			expr, err := parser.ParseExpr(c.fields[1])
 			if err != nil {
-				panic("We screwed up the regular expression")
+				fmt.Fprintf(os.Stderr, "Error: Parse error in line %d: %s\n", c.lineNo, err.Error())
 			}
-			if !allDigits {
-				label, ok := labels[c.fields[1]]
-				if !ok {
-					fmt.Fprintf(os.Stderr, "Error: Label %s not defined\n", c.fields[1])
-					os.Exit(1)
-				}
-				newC.fields = []string{"TIME", fmt.Sprintf("%d", label.start)}
-				newC.line = strings.Join(newC.fields, ",")
-			}
+			result := interpretExpr(expr, labels, c.lineNo)
+			newC.fields = []string{"TIME", fmt.Sprintf("%d", result)}
+			newC.line = strings.Join(newC.fields, ",")
 			newCommands = append(newCommands, newC)
 		default:
 			newC := c
