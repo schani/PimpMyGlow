@@ -243,10 +243,16 @@ func resolveColorInCommands(cs []command, colors map[string]color, allowDefine b
 				fmt.Fprintf(os.Stderr, "Error: Color %s redefined\n", c.fields[1])
 				os.Exit(1)
 			}
+			var colorFields []string
+			if len(c.fields) == 3 {
+				colorFields = resolveColor(colors, c.fields[2], c.lineNo)
+			} else {
+				colorFields = c.fields[2:5]
+			}
 			colors[c.fields[1]] = color{
-				r: parseNumber(c.fields[2], c.lineNo),
-				g: parseNumber(c.fields[3], c.lineNo),
-				b: parseNumber(c.fields[4], c.lineNo),
+				r: parseNumber(colorFields[0], c.lineNo),
+				g: parseNumber(colorFields[1], c.lineNo),
+				b: parseNumber(colorFields[2], c.lineNo),
 			}
 		case "C":
 			newC := c
