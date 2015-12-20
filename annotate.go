@@ -242,21 +242,6 @@ func resolveColorInCommands(cs []command, colors map[string]color, allowDefine b
 			if !allowDefine {
 				errorExit(c.lineNo, "Can't define colors here")
 			}
-			_, ok := colors[c.fields[1]]
-			if ok {
-				errorExit(c.lineNo, "Color `%s` redefined", c.fields[1])
-			}
-			var colorFields []string
-			if len(c.fields) == 3 {
-				colorFields = resolveColor(colors, c.fields[2], c.lineNo)
-			} else {
-				colorFields = c.fields[2:5]
-			}
-			colors[c.fields[1]] = color{
-				r: parseNumber(colorFields[0], c.lineNo),
-				g: parseNumber(colorFields[1], c.lineNo),
-				b: parseNumber(colorFields[2], c.lineNo),
-			}
 		case "C":
 			newC := c
 			if len(c.fields) == 2 {
@@ -284,8 +269,42 @@ func resolveColorInCommands(cs []command, colors map[string]color, allowDefine b
 	return newCommands
 }
 
+func gatherColorsInCommands(cs []command, colors map[string]color) {
+	for _, c := range cs {
+		switch c.fields[0] {
+		case "COLOR":
+			_, ok := colors[c.fields[1]]
+			if ok {
+				errorExit(c.lineNo, "Color `%s` redefined", c.fields[1])
+			}
+			var colorFields []string
+			if len(c.fields) == 3 {
+				colorFields = resolveColor(colors, c.fields[2], c.lineNo)
+			} else {
+				colorFields = c.fields[2:5]
+			}
+			colors[c.fields[1]] = color{
+				r: parseNumber(colorFields[0], c.lineNo),
+				g: parseNumber(colorFields[1], c.lineNo),
+				b: parseNumber(colorFields[2], c.lineNo),
+			}
+		default:
+			if c.hasSubCommands() {
+				gatherColorsInCommands(c.subCommands, colors)
+			}
+		}
+	}
+}
+
+func (p program) gatherColors() map[string]color {
+	colors := make(map[string]color)
+	gatherColorsInCommands(p, colors)
+	return colors
+}
+
 func (p program) resolveColor() program {
-	return resolveColorInCommands(p, make(map[string]color), true)
+	colors := p.gatherColors()
+	return resolveColorInCommands(p, colors, true)
 }
 
 type label struct {
