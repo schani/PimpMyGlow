@@ -1,0 +1,54 @@
+COLOR,black,0,0,0
+COLOR,white,255,255,255
+COLOR,red,255,0,0
+COLOR,blue,0,0,255
+
+C,black
+
+TIME,Eins
+CLUBS,1
+	C,white
+	TIME,-Eins
+	C,black
+E
+
+TIME,Zwei
+CLUBS,2
+	C,white
+	TIME,-Zwei
+	C,black
+E
+
+TIME,Polizei
+CLUBS,3
+	RAMP,red,&Polizei/2
+	RAMP,black,&Polizei/2
+E
+
+TIME,Drei
+CLUBS,1
+	C,white
+	TIME,-Drei
+	C,black
+E
+
+TIME,Vier
+CLUBS,2
+	C,white
+	TIME,-Vier
+	C,black
+E
+
+TIME,Grenadier
+CLUBS,3
+	L,5
+		C,blue
+		D,&Grenadier/10
+		C,black
+		D,&Grenadier/10
+	E
+E
+
+TIME,Klopf
+C,white
+TIME,-Klopf
