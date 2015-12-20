@@ -376,7 +376,7 @@ func parseProgram(r io.Reader) program {
 
 	commands, lineNo := parseLines(lines, 0)
 	if lineNo < len(lines) {
-		errorExit(lineNo, "E without L", lineNo)
+		errorExit(lineNo, "E without L")
 	}
 
 	return commands
