@@ -11,16 +11,29 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
 
 type command struct {
-	line        string
-	endLine     string
-	lineNo      int
-	fields      []string
-	subCommands []command
+	originalLine string
+	endLine      string
+	lineNo       int
+	fields       []string
+	subCommands  []command
+}
+
+func (c command) line() string {
+	if c.originalLine != "" {
+		return c.originalLine
+	}
+	return strings.Join(c.fields, ",")
+}
+
+func (c *command) setFields(fields []string) {
+	c.fields = fields
+	c.originalLine = ""
 }
 
 type program []command
@@ -86,7 +99,7 @@ func (c *command) hasSubCommands() bool {
 func parseCommand(lines []string, startLineNo int, fields []string) (c command, lineNo int) {
 	lineNo = startLineNo
 	lineVerbatim := lines[lineNo]
-	c = command{line: lineVerbatim, lineNo: lineNo, fields: fields}
+	c = command{originalLine: lineVerbatim, lineNo: lineNo, fields: fields}
 	if fields[0] == "E" {
 		panic("cannot parse command E")
 	}
@@ -129,7 +142,7 @@ func (c *command) duration() int {
 }
 
 func (c *command) print(w io.Writer) {
-	fmt.Fprintln(w, c.line)
+	fmt.Fprintln(w, c.line())
 	if c.hasSubCommands() {
 		for _, sc := range c.subCommands {
 			sc.print(w)
@@ -199,7 +212,7 @@ func (p program) resolveTime() program {
 				continue
 			}
 			fields := []string{"D", fmt.Sprintf("%d", target-time)}
-			newCommands = append(newCommands, command{line: strings.Join(fields, ","), fields: fields, lineNo: c.lineNo})
+			newCommands = append(newCommands, command{fields: fields, lineNo: c.lineNo})
 			time = target
 		default:
 			newCommands = append(newCommands, c)
@@ -214,6 +227,10 @@ type color struct {
 }
 
 var colorRegexp *regexp.Regexp
+
+func (c color) fields() []string {
+	return []string{fmt.Sprintf("%d", c.r), fmt.Sprintf("%d", c.g), fmt.Sprintf("%d", c.b)}	
+}
 
 func resolveColor(colors map[string]color, description string, lineNo int) []string {
 	if colorRegexp == nil {
@@ -231,7 +248,7 @@ func resolveColor(colors map[string]color, description string, lineNo int) []str
 		c.g = int(float64(c.g) * p)
 		c.b = int(float64(c.b) * p)
 	}
-	return []string{fmt.Sprintf("%d", c.r), fmt.Sprintf("%d", c.g), fmt.Sprintf("%d", c.b)}
+	return c.fields()
 }
 
 func resolveColorInCommands(cs []command, colors map[string]color, allowDefine bool) []command {
@@ -246,16 +263,14 @@ func resolveColorInCommands(cs []command, colors map[string]color, allowDefine b
 			newC := c
 			if len(c.fields) == 2 {
 				clr := resolveColor(colors, c.fields[1], c.lineNo)
-				newC.fields = []string{"C", clr[0], clr[1], clr[2]}
-				newC.line = strings.Join(newC.fields, ",")
+				newC.setFields([]string{"C", clr[0], clr[1], clr[2]})
 			}
 			newCommands = append(newCommands, newC)
 		case "RAMP":
 			newC := c
 			if len(c.fields) == 3 {
 				clr := resolveColor(colors, c.fields[1], c.lineNo)
-				newC.fields = []string{"RAMP", clr[0], clr[1], clr[2], c.fields[2]}
-				newC.line = strings.Join(newC.fields, ",")
+				newC.setFields([]string{"RAMP", clr[0], clr[1], clr[2], c.fields[2]})
 			}
 			newCommands = append(newCommands, newC)
 		default:
@@ -366,7 +381,7 @@ func (p program) resolveLabels(labels map[string]label) program {
 		switch c.fields[0] {
 		case "D", "TIME", "RAMP":
 			timeField := len(c.fields) - 1
-			newC.fields = make([]string, len(c.fields))
+			newC.setFields(make([]string, len(c.fields)))
 			copy(newC.fields, c.fields)
 
 			expr, err := parser.ParseExpr(c.fields[timeField])
@@ -376,7 +391,6 @@ func (p program) resolveLabels(labels map[string]label) program {
 			result := interpretExpr(expr, labels, c.lineNo)
 
 			newC.fields[timeField] = fmt.Sprintf("%d", result)
-			newC.line = strings.Join(newC.fields, ",")
 		default:
 			if c.hasSubCommands() {
 				newC.subCommands = program(c.subCommands).resolveLabels(labels)
@@ -439,6 +453,65 @@ func mapFromLabels(labels []label) map[string]label {
 	return labelsMap
 }
 
+type timeline []label
+
+func (ls timeline) Len() int {
+	return len(ls)
+}
+
+func (ls timeline) Less(i, j int) bool {
+	return ls[i].start < ls[j].start
+}
+
+func (ls timeline) Swap(i, j int) {
+	tmp := ls[i]
+	ls[i] = ls[j]
+	ls[j] = tmp
+}
+
+func (ls timeline) program(colors map[string]color) program {
+	var commands []command
+	for name, c := range colors {
+		commands = append(commands, command{fields: append([]string{"COLOR", name}, c.fields()...)})
+	}
+	commands = append(commands, command{fields: []string{"C", "0", "0", "0"}})
+	for _, l := range ls {
+		var labelCommands []command
+		
+		labelCommands = append(labelCommands, command{fields: []string{"TIME", strconv.FormatInt(int64(l.start), 10)}})
+		
+		fields := strings.Split(l.name, ":")
+		for i, f := range fields {
+			fields[i] = strings.TrimSpace(f)
+		}
+		name := fields[len(fields)-1]
+		colorCommand := command{fields: append([]string{"C", name})}
+		labelCommands = append(labelCommands, colorCommand)		
+		labelCommands = append(labelCommands, command{fields: []string{"TIME", strconv.FormatInt(int64(l.end), 10)}})
+		labelCommands = append(labelCommands, command{fields: []string{"C", "0", "0", "0"}})
+		
+		if len(fields) > 1 {
+			matches, err := regexp.MatchString("^[cC]\\s*\\d+(,\\d+)*$", fields[0]) 
+			if err != nil {
+				panic("Messed up regular expression")
+			}
+			if !matches {
+				errorExit(-1, "Illegal clubs specification `%s`", fields[0])
+			}
+			clubs := strings.Split(fields[0][1:len(fields[0])], ",")
+			clubCommand := command{fields: append([]string{"CLUBS"}, clubs...), endLine: "E"}
+			clubCommand.subCommands = labelCommands
+			
+			labelCommands = []command{clubCommand}
+		}
+		
+		commands = append(commands, labelCommands...)
+	}
+	
+	commands = append(commands, command{fields: []string{"END"}})
+	return commands
+}
+
 func main() {
 	var err error
 
@@ -446,6 +519,7 @@ func main() {
 	clubFlag := flag.Int("club", 0, "Club to specialize for")
 	inputFlag := flag.String("input", "-", "Input file")
 	outputFlag := flag.String("output", "-", "Output file")
+	timelineFlag := flag.Bool("timeline", false, "Produce program from timeline")
 
 	flag.Parse()
 
@@ -479,15 +553,25 @@ func main() {
 		}
 		defer inFile.Close()
 	}
-	program := parseProgram(inFile)
+	inputProgram := parseProgram(inFile)
 
-	specialized := program
+	var labelsMap map[string]label
+
+	if *timelineFlag {
+		sort.Sort(timeline(labels))
+		colors := inputProgram.gatherColors()
+		inputProgram = timeline(labels).program(colors)
+	} else {
+		labelsMap = mapFromLabels(labels)
+	}
+
+	specialized := inputProgram
 	if *clubFlag != 0 {
-		specialized = program.specializeForClub(*clubFlag)
+		specialized = inputProgram.specializeForClub(*clubFlag)
 	}
 	colored := specialized.resolveColor()
-	delabeled := colored.resolveLabels(mapFromLabels(labels))
-	resolved := delabeled.resolveTime()
+	delabeled := colored.resolveLabels(labelsMap)
+	finalProgram := delabeled.resolveTime()
 
 	outFile := os.Stdout
 	if *outputFlag != "-" {
@@ -499,5 +583,5 @@ func main() {
 		defer outFile.Close()
 	}
 
-	resolved.annotateTimes(outFile)
+	finalProgram.annotateTimes(outFile)
 }
