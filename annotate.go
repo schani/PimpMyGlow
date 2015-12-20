@@ -308,6 +308,7 @@ func (p program) resolveColor() program {
 }
 
 type label struct {
+	name  string
 	start int
 	end   int
 }
@@ -413,21 +414,29 @@ type XMLProject struct {
 	Labels []XMLLabel `xml:"labeltrack>label"`
 }
 
-func readLabels(reader io.Reader) (map[string]label, error) {
+func readLabels(reader io.Reader) ([]label, error) {
 	var project XMLProject
 	if err := xml.NewDecoder(reader).Decode(&project); err != nil {
 		return nil, err
 	}
-	labels := make(map[string]label)
+	var labels []label
 	for _, l := range project.Labels {
-		_, ok := labels[l.Title]
-		if ok {
-			fmt.Fprintf(os.Stderr, "Error: Label %s defined more than once\n", l.Title)
-			os.Exit(1)
-		}
-		labels[l.Title] = label{start: int(l.Start * 100), end: int(l.End * 100)}
+		labels = append(labels, label{name: l.Title, start: int(l.Start * 100), end: int(l.End * 100)})
 	}
 	return labels, nil
+}
+
+func mapFromLabels(labels []label) map[string]label {
+	labelsMap := make(map[string]label)
+	for _, l := range labels {
+		_, ok := labelsMap[l.name]
+		if ok {
+			fmt.Fprintf(os.Stderr, "Error: Label %s defined more than once\n", l.name)
+			os.Exit(1)
+		}
+		labelsMap[l.name] = l
+	}
+	return labelsMap
 }
 
 func main() {
@@ -445,7 +454,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	labels := make(map[string]label)
+	var labels []label
 	if *audacityFlag != "" {
 		file, err := os.Open(*audacityFlag)
 		if err != nil {
@@ -477,7 +486,7 @@ func main() {
 		specialized = program.specializeForClub(*clubFlag)
 	}
 	colored := specialized.resolveColor()
-	delabeled := colored.resolveLabels(labels)
+	delabeled := colored.resolveLabels(mapFromLabels(labels))
 	resolved := delabeled.resolveTime()
 
 	outFile := os.Stdout
