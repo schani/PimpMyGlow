@@ -1,7 +1,5 @@
 # UI: Save paths when quitting
 
-# Document timeline
-
 # Set default color
 
 Right now it's black.

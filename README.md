@@ -113,3 +113,79 @@ total `drums` duration, then black for another 20th.
 Note that because the resolution of the timer is only a hundredth
 of a second, the total loop duration might be somewhat less than the
 duration of `drums`, especially if you use a large number of iterations.
+
+## Timeline
+
+Another way to produce a program is to use labels in Audacity to mark
+and specify colors or subroutines for all or specific clubs.  The
+following kinds of labels can be used:
+
+### Colors
+
+The label name can be the name of a color, optionally with a percentage.
+The color has to be defined in the `glo` file.  Example:
+
+    red 50%
+
+### Subroutines
+
+If the label name is the name of a subroutine, the code for that
+subroutine will be inserted for the label.  Within the subroutine,
+the variable `duration` stands for the duration of the label.  For
+example, if this is defined in the `glo` file:
+
+     DEFSUB,blink
+	    L,duration/10
+		    COLOR,white
+			D,5
+			COLOR,black
+			D,5
+		E
+	ENDSUB
+
+then if a label of duration `70` is named
+
+    blink
+
+it will produce the code
+
+	L,7
+		COLOR,white
+		D,5
+		COLOR,black
+		D,5
+	E
+
+Make sure that the duration of the subroutine is not longer than
+the duration of the label, or you might get an error, or at least
+unexpected results.
+
+### Ramps
+
+A label name of the form
+
+    RAMP:C1:C2:...:Cn
+
+will produce a series of ramps starting with `C1` to `C2`, through
+to `Cn`.  The duration of the ramps will be evenly distributed to
+fill the duration of the label.  At least two colors must be
+specified.  Percentages can be used.  For example:
+
+    RAMP:black:red 50%:white:black
+
+will produce a ramp from black to half red, then to white, then
+back to black.
+
+### Specifying clubs
+
+A label can be prefixed with something of the form
+
+    C1,2,...,n:
+
+to specify which clubs the label applies to.  If there is no
+such specification, the label applies to all clubs.  For example:
+
+    C1,3,5:RAMP:black,white,black
+
+will ramp only clubs 1, 3, and 5 from black to white to black
+again.
