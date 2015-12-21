@@ -15,7 +15,7 @@
 			<envelope numpoints="0"/>
 		</waveclip>
 	</wavetrack>
-	<wavetrack name="Audio Track" channel="1" linked="0" mute="0" solo="0" height="150" minimized="0" isSelected="0" rate="44100" gain="1.0" pan="0.0">
+	<wavetrack name="Audio Track" channel="1" linked="0" mute="0" solo="0" height="150" minimized="0" isSelected="1" rate="44100" gain="1.0" pan="0.0">
 		<waveclip offset="0.00000000">
 			<sequence maxsamples="262144" sampleformat="262159" numsamples="335872">
 				<waveblock start="0">
@@ -35,7 +35,7 @@
 		<label t="2.2987753549" t1="2.6530612245" title="C3:ramp:red:black"/>
 		<label t="2.9373242630" t1="3.2449886621" title="C1:white 50%"/>
 		<label t="3.3494784580" t1="3.7500226757" title="C2:white"/>
-		<label t="3.8835374150" t1="4.6033560091" title="c3:red"/>
+		<label t="3.8835374150" t1="4.5793280000" title="c3:ramp:black:red:green:blue:black"/>
 		<label t="5.0503401361" t1="5.8456235828" title="blinK"/>
 		<label t="6.3680725624" t1="6.6234920635" title="blue"/>
 	</labeltrack>

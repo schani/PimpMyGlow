@@ -558,22 +558,33 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 
 				labelCommands = append(labelCommands, subCommands...)
 			}
-		} else if len(fields) == 3 && strings.ToLower(fields[0]) == "ramp" {
-			ok, _, _ := lookupColor(colors, fields[1])
-			if !ok {
-				errorExit(-1, "Unknown color `%s`", fields[1])
+		} else if len(fields) > 2 && strings.ToLower(fields[0]) == "ramp" {
+			colorFields := fields[1:len(fields)]
+			for _, c := range colorFields {
+				ok, _, _ := lookupColor(colors, c)
+				if !ok {
+					errorExit(-1, "Unknown color `%s`", c)
+				}
 			}
 
-			ok, _, _ = lookupColor(colors, fields[2])
-			if !ok {
-				errorExit(-1, "Unknown color `%s`", fields[2])
-			}
-
-			colorCommand := command{fields: []string{"C", fields[1]}}
+			colorCommand := command{fields: []string{"C", colorFields[0]}}
 			labelCommands = append(labelCommands, colorCommand)
 
-			rampCommand := command{fields: []string{"RAMP", fields[2], strconv.FormatInt(int64(duration), 10)}}
-			labelCommands = append(labelCommands, rampCommand)
+			rampFields := colorFields[1:len(colorFields)]
+			timeSoFar := 0
+			for i, c := range rampFields {
+				timeTarget := (i + 1) * duration / len(rampFields)
+				time := timeTarget - timeSoFar
+
+				rampCommand := command{fields: []string{"RAMP", c, strconv.FormatInt(int64(time), 10)}}
+				labelCommands = append(labelCommands, rampCommand)
+
+				timeSoFar += time
+			}
+
+			if timeSoFar != duration {
+				panic("I can't do math")
+			}
 		} else {
 			errorExit(-1, "Incorrect label `%s`", l.name)
 		}
