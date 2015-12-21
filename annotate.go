@@ -89,7 +89,7 @@ func parseLines(lines []string, startLineNo int) (commands []command, lineNo int
 }
 
 func isBlockCommand(c string) bool {
-	return c == "L" || c == "CLUBS"
+	return c == "L" || c == "CLUBS" || c == "FILL"
 }
 
 func (c *command) hasSubCommands() bool {
@@ -117,6 +117,14 @@ func parseCommand(lines []string, startLineNo int, fields []string) (c command, 
 	return c, lineNo
 }
 
+func commandsDuration(cs []command) int {
+	duration := 0
+	for _, sc := range cs {
+		duration += sc.duration()
+	}
+	return duration
+}
+
 func (c *command) duration() int {
 	switch c.fields[0] {
 	case "D":
@@ -125,11 +133,10 @@ func (c *command) duration() int {
 		return parseCount(c.fields[4], c.lineNo)
 	case "L":
 		count := parseCount(c.fields[1], c.lineNo)
-		duration := 0
-		for _, sc := range c.subCommands {
-			duration += sc.duration()
-		}
+		duration := commandsDuration(c.subCommands)
 		return duration * count
+	case "FILL":
+		return parseCount(c.fields[1], c.lineNo)
 	case "TIME":
 		errorExit(c.lineNo, "TIME not supported here")
 		return -1
@@ -424,7 +431,7 @@ func (p program) resolveExprs(labels map[string]label, definitions map[string]in
 	var newCommands []command
 	for _, c := range p {
 		newC := c
-		if c.fields[0] == "D" || c.fields[0] == "TIME" || c.fields[0] == "RAMP" || c.fields[0] == "L" {
+		if c.fields[0] == "D" || c.fields[0] == "TIME" || c.fields[0] == "RAMP" || c.fields[0] == "L" || c.fields[0] == "FILL" {
 			exprField := len(c.fields) - 1
 			newC.setFields(make([]string, len(c.fields)))
 			copy(newC.fields, c.fields)
@@ -441,6 +448,109 @@ func (p program) resolveExprs(labels map[string]label, definitions map[string]in
 			newC.subCommands = program(c.subCommands).resolveExprs(labels, definitions)
 		}
 		newCommands = append(newCommands, newC)
+	}
+	return newCommands
+}
+
+func (c command) fill(duration int) []command {
+	//fmt.Fprintf(os.Stderr, "filling command to %d\n", duration)
+	//c.print(os.Stderr)
+
+	if c.duration() < duration {
+		panic("can't fill a command that's too short")
+	}
+
+	newC := c
+	newC.setFields(make([]string, len(c.fields)))
+	copy(newC.fields, c.fields)
+
+	if c.fields[0] == "D" || c.fields[0] == "RAMP" {
+		// FIXME: we shouldn't just shorten a ramp, it might
+		// produce a weird effect
+		newC.fields[len(c.fields)-1] = strconv.FormatInt(int64(duration), 10)
+		return []command{newC}
+	}
+
+	if c.fields[0] != "L" {
+		errorExit(c.lineNo, "Illegal command `%s` within `FILL`", c.fields[0])
+	}
+
+	var newCommands []command
+
+	loopDuration := commandsDuration(c.subCommands)
+	numIterations := duration / loopDuration
+	//fmt.Fprintf(os.Stderr, "loop is %d, doing %d iterations\n", loopDuration, numIterations)
+	if numIterations > 0 {
+		newC.fields[1] = strconv.FormatInt(int64(numIterations), 10)
+		newCommands = append(newCommands, newC)
+	}
+
+	left := duration - loopDuration*numIterations
+	if left > 0 {
+		newCommands = append(newCommands, fillCommands(c.subCommands, left)...)
+	}
+
+	if commandsDuration(newCommands) != duration {
+		panic("we can't do commands fill math")
+	}
+
+	return newCommands
+}
+
+func fillCommands(commands []command, duration int) []command {
+	var newCommands []command
+	time := 0
+	for _, sc := range commands {
+		left := duration - time
+		if left <= 0 {
+			break
+		}
+
+		scDuration := sc.duration()
+		if scDuration <= left {
+			newCommands = append(newCommands, sc)
+			time += scDuration
+			continue
+		}
+
+		filledCommands := sc.fill(left)
+		newCommands = append(newCommands, filledCommands...)
+		time += left
+		break
+	}
+	left := duration - time
+	if left < 0 {
+		panic("I can't do fill math")
+	}
+	if left > 0 {
+		newCommands = append(newCommands, command{fields: []string{"D", strconv.FormatInt(int64(left), 10)}})
+	}
+	if commandsDuration(newCommands) != duration {
+		//fmt.Fprintf(os.Stderr, "duration %d should be %d\n", commandsDuration(newCommands), duration)
+		//program(newCommands).print(os.Stderr)
+		panic("We filled incorrectly")
+	}
+	return newCommands
+}
+
+func (p program) resolveFill() program {
+	var newCommands []command
+	for _, c := range p {
+		if !c.hasSubCommands() {
+			newCommands = append(newCommands, c)
+			continue
+		}
+
+		subCommands := program(c.subCommands).resolveFill()
+		if c.fields[0] != "FILL" {
+			newC := c
+			newC.subCommands = subCommands
+			newCommands = append(newCommands, newC)
+			continue
+		}
+
+		duration := parseCount(c.fields[1], c.lineNo)
+		newCommands = append(newCommands, fillCommands(subCommands, duration)...)
 	}
 	return newCommands
 }
@@ -564,7 +674,12 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 				definitions := map[string]int{"duration": duration}
 				subCommands := program(sub.commands).resolveExprs(make(map[string]label), definitions)
 
-				labelCommands = append(labelCommands, subCommands...)
+				fillCommand := command{
+					fields:      []string{"FILL", strconv.FormatInt(int64(duration), 10)},
+					endLine:     "E",
+					subCommands: subCommands}
+
+				labelCommands = append(labelCommands, fillCommand)
 			}
 		} else if len(fields) > 2 && strings.ToLower(fields[0]) == "ramp" {
 			colorFields := fields[1:len(fields)]
@@ -614,10 +729,10 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 	return commands
 }
 
-func (ls timeline) checkConsistency () {
+func (ls timeline) checkConsistency() {
 	allActive := 0
 	var clubsActive []int
-	
+
 	for _, l := range ls {
 		clubs, _ := l.clubs()
 		var clubsString string
@@ -626,7 +741,7 @@ func (ls timeline) checkConsistency () {
 		} else {
 			clubsString = "clubs " + strings.Join(clubs, ", ")
 		}
-		
+
 		if l.start < allActive {
 			errorExit(-1, "Label collision for %s at time %d", clubsString, l.start)
 		}
@@ -644,11 +759,11 @@ func (ls timeline) checkConsistency () {
 			for i >= len(clubsActive) {
 				clubsActive = append(clubsActive, 0)
 			}
-			
+
 			if l.start < clubsActive[i] {
 				errorExit(-1, "Label collision for club %d at time %d", i, l.start)
 			}
-			
+
 			clubsActive[i] = l.end
 		}
 	}
@@ -715,7 +830,8 @@ func main() {
 	}
 	colored := specialized.resolveColor()
 	delabeled := colored.resolveExprs(labelsMap, make(map[string]int))
-	finalProgram := delabeled.resolveTime()
+	filled := delabeled.resolveFill()
+	finalProgram := filled.resolveTime()
 
 	outFile := os.Stdout
 	if *outputFlag != "-" {

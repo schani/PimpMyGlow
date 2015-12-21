@@ -114,6 +114,44 @@ Note that because the resolution of the timer is only a hundredth
 of a second, the total loop duration might be somewhat less than the
 duration of `drums`, especially if you use a large number of iterations.
 
+### Fill
+
+With time arithmetic we can run loops a specific number of iterations
+that we arrive at by dividing the total duration we want by the
+duration of one iteration.  That usually results in some amount of
+time at the end of the loop to be unfilled because it's not enough for
+a whole loop iteration, but it might be noticeable.
+
+We can instead let the compiler calculate the number of iterations
+that fit into the desired duration, and then insert one more iteration
+up to the point that it fills in the rest.  For example:
+
+	FILL,43
+	    L,100000
+		    COLOR,white
+			D,5
+			COLOR,black
+			D,5
+		E
+	E
+
+will shorten the number of iterations of the loop within the `FILL` to
+fit into 43, namely to 4 iterations.  There is now a duration of 3
+left to fill, so it will start adding commands from the loop until 3
+is full, so it'll produce
+
+    L,4
+	    COLOR,white
+		D,5
+		COLOR,black
+		D,5
+	E
+	COLOR,white
+	D,3
+
+`D` and `RAMP` commands will be shortened by `FILL` to produce the
+correct fit.  This might be problematic in the case of `RAMP`.
+
 ## Timeline
 
 Another way to produce a program is to use labels in Audacity to mark
@@ -130,12 +168,13 @@ The color has to be defined in the `glo` file.  Example:
 ### Subroutines
 
 If the label name is the name of a subroutine, the code for that
-subroutine will be inserted for the label.  Within the subroutine,
-the variable `duration` stands for the duration of the label.  For
-example, if this is defined in the `glo` file:
+subroutine will be inserted for the label, and filled to the length of
+the label.  Usually the subroutine will consist of a loop, so you'll
+probably want to choose an unrealistically big number of iterations so
+that it gets shortened.  For example:
 
      DEFSUB,blink
-	    L,duration/10
+	    L,1000000
 		    COLOR,white
 			D,5
 			COLOR,black
@@ -143,7 +182,7 @@ example, if this is defined in the `glo` file:
 		E
 	ENDSUB
 
-then if a label of duration `70` is named
+Then if a label of duration `77` is named
 
     blink
 
@@ -155,10 +194,14 @@ it will produce the code
 		COLOR,black
 		D,5
 	E
+	COLOR,white
+	D,5
+	COLOR,black
+	D,2
 
-Make sure that the duration of the subroutine is not longer than
-the duration of the label, or you might get an error, or at least
-unexpected results.
+Within the subroutine, the variable `duration` stands for the duration
+of the label.  This might be useful if you want to produce a specific
+number of blinks, no matter how long or short the label is.
 
 ### Ramps
 
@@ -185,7 +228,7 @@ A label can be prefixed with something of the form
 to specify which clubs the label applies to.  If there is no
 such specification, the label applies to all clubs.  For example:
 
-    C1,3,5:RAMP:black,white,black
+    C1,3,5:RAMP:black:white:black
 
 will ramp only clubs 1, 3, and 5 from black to white to black
 again.
