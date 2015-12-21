@@ -229,7 +229,7 @@ type color struct {
 var colorRegexp *regexp.Regexp
 
 func (c color) fields() []string {
-	return []string{fmt.Sprintf("%d", c.r), fmt.Sprintf("%d", c.g), fmt.Sprintf("%d", c.b)}	
+	return []string{fmt.Sprintf("%d", c.r), fmt.Sprintf("%d", c.g), fmt.Sprintf("%d", c.b)}
 }
 
 func resolveColor(colors map[string]color, description string, lineNo int) []string {
@@ -323,7 +323,7 @@ func (p program) resolveColor() program {
 }
 
 type sub struct {
-	name string
+	name     string
 	commands []command
 }
 
@@ -348,12 +348,12 @@ func (p program) gatherSubs() map[string]sub {
 		}
 
 		name := p[i].fields[1]
-		sub := sub{name: name, commands: p[i+1:j]}
+		sub := sub{name: name, commands: p[i+1 : j]}
 		subs[name] = sub
 
 		i = j + 1
 	}
-	
+
 	return subs
 }
 
@@ -375,13 +375,17 @@ func lookupLabel(labels map[string]label, name string, lineNo int) label {
 	return label
 }
 
-func interpretExpr(expr ast.Expr, labels map[string]label, lineNo int) int {
+func interpretExpr(expr ast.Expr, labels map[string]label, definitions map[string]int, lineNo int) int {
 	switch expr := expr.(type) {
 	case *ast.BasicLit:
 		if expr.Kind == token.INT {
 			return parseNumber(expr.Value, lineNo)
 		}
 	case *ast.Ident:
+		v, ok := definitions[expr.Name]
+		if ok {
+			return v
+		}
 		return lookupLabel(labels, expr.Name, lineNo).start
 	case *ast.UnaryExpr:
 		if expr.Op == token.SUB {
@@ -400,8 +404,8 @@ func interpretExpr(expr ast.Expr, labels map[string]label, lineNo int) int {
 		}
 	case *ast.BinaryExpr:
 		if expr.Op == token.QUO {
-			left := interpretExpr(expr.X, labels, lineNo)
-			right := interpretExpr(expr.Y, labels, lineNo)
+			left := interpretExpr(expr.X, labels, definitions, lineNo)
+			right := interpretExpr(expr.Y, labels, definitions, lineNo)
 			return left / right
 		}
 	}
@@ -409,27 +413,25 @@ func interpretExpr(expr ast.Expr, labels map[string]label, lineNo int) int {
 	return -1
 }
 
-func (p program) resolveLabels(labels map[string]label) program {
+func (p program) resolveExprs(labels map[string]label, definitions map[string]int) program {
 	var newCommands []command
 	for _, c := range p {
 		newC := c
-		switch c.fields[0] {
-		case "D", "TIME", "RAMP":
-			timeField := len(c.fields) - 1
+		if c.fields[0] == "D" || c.fields[0] == "TIME" || c.fields[0] == "RAMP" || c.fields[0] == "L" {
+			exprField := len(c.fields) - 1
 			newC.setFields(make([]string, len(c.fields)))
 			copy(newC.fields, c.fields)
 
-			expr, err := parser.ParseExpr(c.fields[timeField])
+			expr, err := parser.ParseExpr(c.fields[exprField])
 			if err != nil {
 				errorExit(c.lineNo, "Parse error: %s", err.Error())
 			}
-			result := interpretExpr(expr, labels, c.lineNo)
+			result := interpretExpr(expr, labels, definitions, c.lineNo)
 
-			newC.fields[timeField] = fmt.Sprintf("%d", result)
-		default:
-			if c.hasSubCommands() {
-				newC.subCommands = program(c.subCommands).resolveLabels(labels)
-			}
+			newC.fields[exprField] = strconv.FormatInt(int64(result), 10)
+		}
+		if c.hasSubCommands() {
+			newC.subCommands = program(c.subCommands).resolveExprs(labels, definitions)
 		}
 		newCommands = append(newCommands, newC)
 	}
@@ -512,15 +514,15 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 	commands = append(commands, command{fields: []string{"C", "0", "0", "0"}})
 	for _, l := range ls {
 		var labelCommands []command
-		
+
 		labelCommands = append(labelCommands, command{fields: []string{"TIME", strconv.FormatInt(int64(l.start), 10)}})
-		
+
 		fields := strings.Split(l.name, ":")
 		for i, f := range fields {
 			fields[i] = strings.TrimSpace(f)
 		}
 		name := fields[len(fields)-1]
-		
+
 		_, ok := colors[name]
 		if ok {
 			colorCommand := command{fields: append([]string{"C", name})}
@@ -530,15 +532,19 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 			if !ok {
 				errorExit(-1, "`%s` is not a color or a sub", name)
 			}
-			
-			labelCommands = append(labelCommands, sub.commands...)
+
+			duration := l.end - l.start
+			definitions := map[string]int{"duration": duration}
+			subCommands := program(sub.commands).resolveExprs(make(map[string]label), definitions)
+
+			labelCommands = append(labelCommands, subCommands...)
 		}
 
 		labelCommands = append(labelCommands, command{fields: []string{"TIME", strconv.FormatInt(int64(l.end), 10)}})
 		labelCommands = append(labelCommands, command{fields: []string{"C", "0", "0", "0"}})
-		
+
 		if len(fields) > 1 {
-			matches, err := regexp.MatchString("^[cC]\\s*\\d+(,\\d+)*$", fields[0]) 
+			matches, err := regexp.MatchString("^[cC]\\s*\\d+(,\\d+)*$", fields[0])
 			if err != nil {
 				panic("Messed up regular expression")
 			}
@@ -548,13 +554,13 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 			clubs := strings.Split(fields[0][1:len(fields[0])], ",")
 			clubCommand := command{fields: append([]string{"CLUBS"}, clubs...), endLine: "E"}
 			clubCommand.subCommands = labelCommands
-			
+
 			labelCommands = []command{clubCommand}
 		}
-		
+
 		commands = append(commands, labelCommands...)
 	}
-	
+
 	commands = append(commands, command{fields: []string{"END"}})
 	return commands
 }
@@ -618,7 +624,7 @@ func main() {
 		specialized = inputProgram.specializeForClub(*clubFlag)
 	}
 	colored := specialized.resolveColor()
-	delabeled := colored.resolveLabels(labelsMap)
+	delabeled := colored.resolveExprs(labelsMap, make(map[string]int))
 	finalProgram := delabeled.resolveTime()
 
 	outFile := os.Stdout
