@@ -10,6 +10,7 @@
                 <outlet property="aupDragDestination" destination="2h9-N7-npn" id="j6y-zu-YbL"/>
                 <outlet property="clubsTextField" destination="5O7-X3-w96" id="P1q-xk-G3u"/>
                 <outlet property="destinationDragDestination" destination="AtX-CT-gaf" id="yDK-Oc-DHW"/>
+                <outlet property="fromTimelineButton" destination="KUL-WH-F1n" id="cda-2R-RcK"/>
                 <outlet property="gloDragDestination" destination="vfR-l0-6b6" id="fdw-bK-J3k"/>
                 <outlet property="runButton" destination="iPv-8v-N3T" id="27a-3L-te3"/>
                 <outlet property="window" destination="QvC-M9-y7g" id="pSd-qk-0q9"/>
@@ -69,16 +70,8 @@
                             </connections>
                         </buttonCell>
                     </button>
-                    <textField horizontalHuggingPriority="251" verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="Fg6-Jh-yWU">
-                        <rect key="frame" x="228" y="157" width="110" height="17"/>
-                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" title="How many clubs?" id="5l1-NB-L9x">
-                            <font key="font" metaFont="system"/>
-                            <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
-                            <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
-                        </textFieldCell>
-                    </textField>
                     <textField verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="5O7-X3-w96">
-                        <rect key="frame" x="261" y="127" width="44" height="22"/>
+                        <rect key="frame" x="261" y="172" width="44" height="22"/>
                         <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" selectable="YES" editable="YES" sendsActionOnEndEditing="YES" state="on" borderStyle="bezel" alignment="left" title="5" drawsBackground="YES" usesSingleLineMode="YES" id="6jL-Ug-7gN">
                             <font key="font" metaFont="system"/>
                             <color key="textColor" name="textColor" catalog="System" colorSpace="catalog"/>
@@ -88,6 +81,21 @@
                             <outlet property="delegate" destination="-2" id="Xla-0I-QAD"/>
                         </connections>
                     </textField>
+                    <textField horizontalHuggingPriority="251" verticalHuggingPriority="750" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="Fg6-Jh-yWU">
+                        <rect key="frame" x="228" y="202" width="110" height="17"/>
+                        <textFieldCell key="cell" scrollable="YES" lineBreakMode="clipping" sendsActionOnEndEditing="YES" title="How many clubs?" id="5l1-NB-L9x">
+                            <font key="font" metaFont="system"/>
+                            <color key="textColor" name="labelColor" catalog="System" colorSpace="catalog"/>
+                            <color key="backgroundColor" name="controlColor" catalog="System" colorSpace="catalog"/>
+                        </textFieldCell>
+                    </textField>
+                    <button fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="KUL-WH-F1n">
+                        <rect key="frame" x="228" y="89" width="111" height="18"/>
+                        <buttonCell key="cell" type="check" title="From timeline?" bezelStyle="regularSquare" imagePosition="left" state="on" inset="2" id="56R-Xn-IBc">
+                            <behavior key="behavior" changeContents="YES" doesNotDimImage="YES" lightByContents="YES"/>
+                            <font key="font" metaFont="system"/>
+                        </buttonCell>
+                    </button>
                 </subviews>
             </view>
             <point key="canvasLocation" x="168" y="474.5"/>

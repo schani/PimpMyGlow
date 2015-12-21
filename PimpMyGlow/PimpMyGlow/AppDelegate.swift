@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, FileDragDestinationDelegate 
     @IBOutlet var destinationDragDestination: FileDragDestination!
     @IBOutlet var runButton: NSButton!
     @IBOutlet var clubsTextField: NSTextField!
+    @IBOutlet var fromTimelineButton: NSButton!
 
     func applicationDidFinishLaunching(aNotification: NSNotification) {
         NSBundle.mainBundle().loadNibNamed("MainWindow", owner: self, topLevelObjects: nil)
@@ -70,9 +71,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, FileDragDestinationDelegate 
         
         for club in 1...numClubs! {
             let executable = NSBundle.mainBundle().resourcePath! + "/glo-annotate"
+            var args = ["-audacity", aupPath, "-input", gloPath, "-club", "\(club)", "-output", destinationPath + "/\(club).glo"]
             
-            let (success, out) = executeCommand(executable,
-                args: ["-audacity", aupPath, "-input", gloPath, "-club", "\(club)", "-output", destinationPath + "/\(club).glo"])
+            if fromTimelineButton.state == NSOnState {
+                args = args + ["-timeline"]
+            }
+            
+            let (success, out) = executeCommand(executable, args: args)
             if !success {
                 let alert = NSAlert()
                 alert.messageText = "Could not pimp for club \(club)"
