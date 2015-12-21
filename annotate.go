@@ -364,9 +364,10 @@ func (p program) gatherSubs() map[string]sub {
 }
 
 type label struct {
-	name  string
-	start int
-	end   int
+	name   string
+	fields []string
+	start  int
+	end    int
 }
 
 func cannotInterpret(expr ast.Expr, lineNo int) {
@@ -476,9 +477,15 @@ func readLabels(reader io.Reader) ([]label, error) {
 	if err := xml.NewDecoder(reader).Decode(&project); err != nil {
 		return nil, err
 	}
+
 	var labels []label
 	for _, l := range project.Labels {
-		labels = append(labels, label{name: l.Title, start: int(l.Start * 100), end: int(l.End * 100)})
+		fields := strings.Split(l.Title, ":")
+		for i, f := range fields {
+			fields[i] = strings.TrimSpace(f)
+		}
+
+		labels = append(labels, label{name: l.Title, fields: fields, start: int(l.Start * 100), end: int(l.End * 100)})
 	}
 	return labels, nil
 }
@@ -512,6 +519,20 @@ func (ls timeline) Swap(i, j int) {
 	ls[j] = tmp
 }
 
+func (l label) clubs() ([]string, []string) {
+	fields := l.fields
+	matches, err := regexp.MatchString("^[cC]\\s*\\d+(,\\d+)*$", fields[0])
+	if err != nil {
+		panic("Messed up regular expression")
+	}
+	var clubs []string
+	if matches {
+		clubs = strings.Split(fields[0][1:len(fields[0])], ",")
+		fields = fields[1:len(fields)]
+	}
+	return clubs, fields
+}
+
 func (ls timeline) program(colors map[string]color, subs map[string]sub) program {
 	var commands []command
 	for name, c := range colors {
@@ -525,20 +546,7 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 
 		labelCommands = append(labelCommands, command{fields: []string{"TIME", strconv.FormatInt(int64(l.start), 10)}})
 
-		fields := strings.Split(l.name, ":")
-		for i, f := range fields {
-			fields[i] = strings.TrimSpace(f)
-		}
-
-		matches, err := regexp.MatchString("^[cC]\\s*\\d+(,\\d+)*$", fields[0])
-		if err != nil {
-			panic("Messed up regular expression")
-		}
-		var clubs []string
-		if matches {
-			clubs = strings.Split(fields[0][1:len(fields[0])], ",")
-			fields = fields[1:len(fields)]
-		}
+		clubs, fields := l.clubs()
 
 		if len(fields) == 1 {
 			name := strings.ToLower(fields[0])
