@@ -237,7 +237,7 @@ func lookupColor(colors map[string]color, description string) (bool, color, stri
 		colorRegexp = regexp.MustCompile("^([^%]+)(\\s+(\\d+)%)?$")
 	}
 	matches := colorRegexp.FindStringSubmatch(description)
-	name := matches[1]
+	name := strings.ToLower(matches[1])
 	c, ok := colors[name]
 	return ok, c, matches[3]
 }
@@ -293,9 +293,10 @@ func gatherColorsInCommands(cs []command, colors map[string]color) {
 	for _, c := range cs {
 		switch c.fields[0] {
 		case "COLOR":
-			_, ok := colors[c.fields[1]]
+			name := strings.ToLower(c.fields[1])
+			_, ok := colors[name]
 			if ok {
-				errorExit(c.lineNo, "Color `%s` redefined", c.fields[1])
+				errorExit(c.lineNo, "Color `%s` redefined", name)
 			}
 			var colorFields []string
 			if len(c.fields) == 3 {
@@ -303,7 +304,7 @@ func gatherColorsInCommands(cs []command, colors map[string]color) {
 			} else {
 				colorFields = c.fields[2:5]
 			}
-			colors[c.fields[1]] = color{
+			colors[name] = color{
 				r: parseNumber(colorFields[0], c.lineNo),
 				g: parseNumber(colorFields[1], c.lineNo),
 				b: parseNumber(colorFields[2], c.lineNo),
@@ -352,7 +353,7 @@ func (p program) gatherSubs() map[string]sub {
 			errorExit(p[i].lineNo, "DEFSUB without ENDSUB")
 		}
 
-		name := p[i].fields[1]
+		name := strings.ToLower(p[i].fields[1])
 		sub := sub{name: name, commands: p[i+1 : j]}
 		subs[name] = sub
 
@@ -540,7 +541,7 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 		}
 
 		if len(fields) == 1 {
-			name := fields[0]
+			name := strings.ToLower(fields[0])
 
 			ok, _, _ := lookupColor(colors, name)
 			if ok {
