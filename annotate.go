@@ -614,6 +614,46 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 	return commands
 }
 
+func (ls timeline) checkConsistency () {
+	allActive := 0
+	var clubsActive []int
+	
+	for _, l := range ls {
+		clubs, _ := l.clubs()
+		var clubsString string
+		if len(clubs) == 0 {
+			clubsString = "all clubs"
+		} else {
+			clubsString = "clubs " + strings.Join(clubs, ", ")
+		}
+		
+		if l.start < allActive {
+			errorExit(-1, "Label collision for %s at time %d", clubsString, l.start)
+		}
+
+		if len(clubs) == 0 {
+			for i, active := range clubsActive {
+				if l.start < active {
+					errorExit(-1, "Label collision for club %d at time %d", i, l.start)
+				}
+			}
+			allActive = l.end
+		}
+		for _, c := range clubs {
+			i := parseNumber(c, -1)
+			for i >= len(clubsActive) {
+				clubsActive = append(clubsActive, 0)
+			}
+			
+			if l.start < clubsActive[i] {
+				errorExit(-1, "Label collision for club %d at time %d", i, l.start)
+			}
+			
+			clubsActive[i] = l.end
+		}
+	}
+}
+
 func main() {
 	var err error
 
@@ -661,6 +701,7 @@ func main() {
 
 	if *timelineFlag {
 		sort.Sort(timeline(labels))
+		timeline(labels).checkConsistency()
 		colors := inputProgram.gatherColors()
 		subs := inputProgram.gatherSubs()
 		inputProgram = timeline(labels).program(colors, subs)

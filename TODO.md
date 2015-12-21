@@ -1,5 +1,3 @@
-# Check consistency
-
 # UI: Save paths when quitting
 
 # Document timeline
