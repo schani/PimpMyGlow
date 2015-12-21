@@ -322,6 +322,41 @@ func (p program) resolveColor() program {
 	return resolveColorInCommands(p, colors, true)
 }
 
+type sub struct {
+	name string
+	commands []command
+}
+
+func (p program) gatherSubs() map[string]sub {
+	subs := make(map[string]sub)
+
+	i := 0
+	for i < len(p) {
+		if p[i].fields[0] != "DEFSUB" {
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(p) {
+			if p[j].fields[0] == "ENDSUB" {
+				break
+			}
+			j++
+		}
+		if j == len(p) {
+			errorExit(p[i].lineNo, "DEFSUB without ENDSUB")
+		}
+
+		name := p[i].fields[1]
+		sub := sub{name: name, commands: p[i+1:j]}
+		subs[name] = sub
+
+		i = j + 1
+	}
+	
+	return subs
+}
+
 type label struct {
 	name  string
 	start int
@@ -469,7 +504,7 @@ func (ls timeline) Swap(i, j int) {
 	ls[j] = tmp
 }
 
-func (ls timeline) program(colors map[string]color) program {
+func (ls timeline) program(colors map[string]color, subs map[string]sub) program {
 	var commands []command
 	for name, c := range colors {
 		commands = append(commands, command{fields: append([]string{"COLOR", name}, c.fields()...)})
@@ -485,8 +520,20 @@ func (ls timeline) program(colors map[string]color) program {
 			fields[i] = strings.TrimSpace(f)
 		}
 		name := fields[len(fields)-1]
-		colorCommand := command{fields: append([]string{"C", name})}
-		labelCommands = append(labelCommands, colorCommand)		
+		
+		_, ok := colors[name]
+		if ok {
+			colorCommand := command{fields: append([]string{"C", name})}
+			labelCommands = append(labelCommands, colorCommand)
+		} else {
+			sub, ok := subs[name]
+			if !ok {
+				errorExit(-1, "`%s` is not a color or a sub", name)
+			}
+			
+			labelCommands = append(labelCommands, sub.commands...)
+		}
+
 		labelCommands = append(labelCommands, command{fields: []string{"TIME", strconv.FormatInt(int64(l.end), 10)}})
 		labelCommands = append(labelCommands, command{fields: []string{"C", "0", "0", "0"}})
 		
@@ -560,7 +607,8 @@ func main() {
 	if *timelineFlag {
 		sort.Sort(timeline(labels))
 		colors := inputProgram.gatherColors()
-		inputProgram = timeline(labels).program(colors)
+		subs := inputProgram.gatherSubs()
+		inputProgram = timeline(labels).program(colors, subs)
 	} else {
 		labelsMap = mapFromLabels(labels)
 	}

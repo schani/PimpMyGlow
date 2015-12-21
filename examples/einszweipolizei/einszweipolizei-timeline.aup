@@ -28,13 +28,14 @@
 			<envelope numpoints="0"/>
 		</waveclip>
 	</wavetrack>
-	<labeltrack name="Label Track" numlabels="7" height="73" minimized="0" isSelected="0">
+	<labeltrack name="Label Track" numlabels="8" height="73" minimized="0" isSelected="1">
 		<label t="0.9171882086" t1="1.3177324263" title="C1:white"/>
 		<label t="1.3467573696" t1="1.7589115646" title="C2:white"/>
 		<label t="1.8750113379" t1="2.6702947846" title="C3:red"/>
 		<label t="2.9373242630" t1="3.2449886621" title="C1:white"/>
 		<label t="3.3494784580" t1="3.7500226757" title="C2:white"/>
 		<label t="3.8835374150" t1="4.6033560091" title="c3:red"/>
+		<label t="5.0503401361" t1="5.8456235828" title="blink"/>
 		<label t="6.3680725624" t1="6.6234920635" title="blue"/>
 	</labeltrack>
 </project>

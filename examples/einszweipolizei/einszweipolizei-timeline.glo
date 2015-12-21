@@ -2,3 +2,12 @@ COLOR,black,0,0,0
 COLOR,white,255,255,255
 COLOR,red,255,0,0
 COLOR,blue,0,0,255
+
+DEFSUB,blink
+	L,10
+		C,white
+		D,1
+		C,black
+		D,1
+	E
+ENDSUB
