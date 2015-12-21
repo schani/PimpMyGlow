@@ -513,6 +513,8 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 	}
 	commands = append(commands, command{fields: []string{"C", "0", "0", "0"}})
 	for _, l := range ls {
+		duration := l.end - l.start
+
 		var labelCommands []command
 
 		labelCommands = append(labelCommands, command{fields: []string{"TIME", strconv.FormatInt(int64(l.start), 10)}})
@@ -521,37 +523,59 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 		for i, f := range fields {
 			fields[i] = strings.TrimSpace(f)
 		}
-		name := fields[len(fields)-1]
+		
+		matches, err := regexp.MatchString("^[cC]\\s*\\d+(,\\d+)*$", fields[0])
+		if err != nil {
+			panic("Messed up regular expression")
+		}
+		var clubs []string
+		if matches {
+			clubs = strings.Split(fields[0][1:len(fields[0])], ",")
+			fields = fields[1:len(fields)]
+		}
 
-		_, ok := colors[name]
-		if ok {
-			colorCommand := command{fields: append([]string{"C", name})}
-			labelCommands = append(labelCommands, colorCommand)
-		} else {
-			sub, ok := subs[name]
-			if !ok {
-				errorExit(-1, "`%s` is not a color or a sub", name)
+		if len(fields) == 1 {
+			name := fields[0]
+	
+			_, ok := colors[name]
+			if ok {
+				colorCommand := command{fields: []string{"C", name}}
+				labelCommands = append(labelCommands, colorCommand)
+			} else {
+				sub, ok := subs[name]
+				if !ok {
+					errorExit(-1, "`%s` is not a color or a sub", name)
+				}
+	
+				definitions := map[string]int{"duration": duration}
+				subCommands := program(sub.commands).resolveExprs(make(map[string]label), definitions)
+	
+				labelCommands = append(labelCommands, subCommands...)
 			}
-
-			duration := l.end - l.start
-			definitions := map[string]int{"duration": duration}
-			subCommands := program(sub.commands).resolveExprs(make(map[string]label), definitions)
-
-			labelCommands = append(labelCommands, subCommands...)
+		} else if len(fields) == 3 && strings.ToLower(fields[0]) == "ramp" { 
+			_, ok := colors[fields[1]]
+			if !ok {
+				errorExit(-1, "Unknown color `%s`", fields[1])
+			}
+			
+			_, ok = colors[fields[2]]
+			if !ok {
+				errorExit(-1, "Unknown color `%s`", fields[2])
+			}
+			
+			colorCommand := command{fields: []string{"C", fields[1]}}
+			labelCommands = append(labelCommands, colorCommand)
+			
+			rampCommand := command{fields: []string{"RAMP", fields[2], strconv.FormatInt(int64(duration), 10)}}
+			labelCommands = append(labelCommands, rampCommand)
+		} else {
+			errorExit(-1, "Incorrect label `%s`", l.name)
 		}
 
 		labelCommands = append(labelCommands, command{fields: []string{"TIME", strconv.FormatInt(int64(l.end), 10)}})
 		labelCommands = append(labelCommands, command{fields: []string{"C", "0", "0", "0"}})
 
-		if len(fields) > 1 {
-			matches, err := regexp.MatchString("^[cC]\\s*\\d+(,\\d+)*$", fields[0])
-			if err != nil {
-				panic("Messed up regular expression")
-			}
-			if !matches {
-				errorExit(-1, "Illegal clubs specification `%s`", fields[0])
-			}
-			clubs := strings.Split(fields[0][1:len(fields[0])], ",")
+		if len(clubs) > 0 {
 			clubCommand := command{fields: append([]string{"CLUBS"}, clubs...), endLine: "E"}
 			clubCommand.subCommands = labelCommands
 
