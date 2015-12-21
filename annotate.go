@@ -232,18 +232,23 @@ func (c color) fields() []string {
 	return []string{fmt.Sprintf("%d", c.r), fmt.Sprintf("%d", c.g), fmt.Sprintf("%d", c.b)}
 }
 
-func resolveColor(colors map[string]color, description string, lineNo int) []string {
+func lookupColor(colors map[string]color, description string) (bool, color, string) {
 	if colorRegexp == nil {
 		colorRegexp = regexp.MustCompile("^([^%]+)(\\s+(\\d+)%)?$")
 	}
 	matches := colorRegexp.FindStringSubmatch(description)
 	name := matches[1]
 	c, ok := colors[name]
+	return ok, c, matches[3]
+}
+
+func resolveColor(colors map[string]color, description string, lineNo int) []string {
+	ok, c, pString := lookupColor(colors, description)
 	if !ok {
-		errorExit(lineNo, "Color `%s` not defined", name)
+		errorExit(lineNo, "Color `%s` not defined", description)
 	}
-	if matches[3] != "" {
-		p := float64(parseNumber(matches[3], lineNo)) / 100.0
+	if pString != "" {
+		p := float64(parseNumber(pString, lineNo)) / 100.0
 		c.r = int(float64(c.r) * p)
 		c.g = int(float64(c.g) * p)
 		c.b = int(float64(c.b) * p)
@@ -523,7 +528,7 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 		for i, f := range fields {
 			fields[i] = strings.TrimSpace(f)
 		}
-		
+
 		matches, err := regexp.MatchString("^[cC]\\s*\\d+(,\\d+)*$", fields[0])
 		if err != nil {
 			panic("Messed up regular expression")
@@ -536,8 +541,8 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 
 		if len(fields) == 1 {
 			name := fields[0]
-	
-			_, ok := colors[name]
+
+			ok, _, _ := lookupColor(colors, name)
 			if ok {
 				colorCommand := command{fields: []string{"C", name}}
 				labelCommands = append(labelCommands, colorCommand)
@@ -546,26 +551,26 @@ func (ls timeline) program(colors map[string]color, subs map[string]sub) program
 				if !ok {
 					errorExit(-1, "`%s` is not a color or a sub", name)
 				}
-	
+
 				definitions := map[string]int{"duration": duration}
 				subCommands := program(sub.commands).resolveExprs(make(map[string]label), definitions)
-	
+
 				labelCommands = append(labelCommands, subCommands...)
 			}
-		} else if len(fields) == 3 && strings.ToLower(fields[0]) == "ramp" { 
-			_, ok := colors[fields[1]]
+		} else if len(fields) == 3 && strings.ToLower(fields[0]) == "ramp" {
+			ok, _, _ := lookupColor(colors, fields[1])
 			if !ok {
 				errorExit(-1, "Unknown color `%s`", fields[1])
 			}
-			
-			_, ok = colors[fields[2]]
+
+			ok, _, _ = lookupColor(colors, fields[2])
 			if !ok {
 				errorExit(-1, "Unknown color `%s`", fields[2])
 			}
-			
+
 			colorCommand := command{fields: []string{"C", fields[1]}}
 			labelCommands = append(labelCommands, colorCommand)
-			
+
 			rampCommand := command{fields: []string{"RAMP", fields[2], strconv.FormatInt(int64(duration), 10)}}
 			labelCommands = append(labelCommands, rampCommand)
 		} else {
