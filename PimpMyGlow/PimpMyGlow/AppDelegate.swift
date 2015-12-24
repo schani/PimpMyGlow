@@ -52,6 +52,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, FileDragDestinationDelegate 
         
         return (status == 0, "")
     }
+    
+    @IBAction func helpButtonPushed(sender: NSButtonCell) {
+        NSWorkspace.sharedWorkspace().openURL(NSURL(string: "https://github.com/schani/PimpMyGlow/blob/master/README.md")!)
+    }
 
     @IBAction func runButtonPushed(sender: NSButtonCell) {
         let numClubs = Int(clubsTextField.stringValue)
